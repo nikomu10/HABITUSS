@@ -176,6 +176,18 @@ export default async function handler(req, res) {
     });
   }
 
+  // CLAVE DE ACCESO de la empresa (opcional pero MUY recomendada).
+  // Si en Vercel existe la variable CLAVE_ACCESO, la página debe enviar esa misma
+  // clave; si no coincide, se rechaza la petición ANTES de gastar dinero en la IA.
+  const claveEsperada = process.env.CLAVE_ACCESO;
+  if (claveEsperada && req.headers["x-clave-acceso"] !== claveEsperada) {
+    return res.status(401).json({
+      ok: false,
+      codigo: "clave",
+      error: "Clave de acceso incorrecta o vacía.",
+    });
+  }
+
   const { imagen, tipoMime, prestador, direccion, referencia } = req.body || {};
   if (!imagen || !["image/jpeg", "image/png"].includes(tipoMime)) {
     return res.status(400).json({ ok: false, error: "Falta la imagen o no es JPG/PNG." });

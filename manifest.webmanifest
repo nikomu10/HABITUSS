@@ -1,0 +1,15 @@
+{
+  "name": "HABITUSS · Plano a PowerPoint",
+  "short_name": "HABITUSS Planos",
+  "description": "Convierte la foto de un plano en un PowerPoint editable.",
+  "lang": "es",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#1f4e79",
+  "theme_color": "#1f4e79",
+  "icons": [
+    { "src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any maskable" },
+    { "src": "/icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+  ]
+}

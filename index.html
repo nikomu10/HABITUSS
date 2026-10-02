@@ -5,6 +5,15 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>HABITUSS · Plano a PowerPoint</title>
 
+  <!-- Para que se pueda INSTALAR como app (ícono, nombre y color) -->
+  <link rel="manifest" href="/manifest.webmanifest" />
+  <meta name="theme-color" content="#1f4e79" />
+  <link rel="apple-touch-icon" href="/icons/icon-192.png" />
+
+  <!-- Librería que arma el PowerPoint (PptxGenJS) y nuestro generador -->
+  <script src="https://cdn.jsdelivr.net/npm/pptxgenjs@3.12.0/dist/pptxgen.bundle.js"></script>
+  <script src="/generar-pptx.js"></script>
+
   <!-- ===================== ESTILOS (cómo se ve la página) ===================== -->
   <style>
     :root {
@@ -20,9 +29,17 @@
       margin: 0; font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
       background: #f5f7fa; color: #1c2630; line-height: 1.5;
     }
-    header { background: var(--azul); color: #fff; padding: 18px 20px; }
+    header { background: var(--azul); color: #fff; padding: 18px 20px;
+             display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
     header h1 { margin: 0; font-size: 1.3rem; }
     header p { margin: 4px 0 0; opacity: .85; font-size: .9rem; }
+    #btnInstalar { display: none; background: #fff; color: var(--azul); margin: 0; padding: 8px 16px; font-weight: 600; }
+    #bloqueClave { display: none; margin-top: 14px; padding: 12px; background: #fff7e6; border: 1px solid #f0c36d; border-radius: 8px; }
+    #bloqueClave label { margin-top: 0; }
+    input[type=password] { width: 100%; padding: 10px; border: 1px solid var(--borde); border-radius: 8px; font-size: 1rem; }
+    #pasoDescarga { display: none; }
+    #btnDescargar { background: var(--ok); }
+    #btnDescargar:disabled { background: #8fbfa3; }
     main { max-width: 900px; margin: 0 auto; padding: 20px; }
     .tarjeta {
       background: #fff; border: 1px solid var(--borde); border-radius: 10px;
@@ -74,8 +91,12 @@
 
 <body>
   <header>
-    <h1>HABITUSS · Plano a PowerPoint</h1>
-    <p>Sube la foto de un plano y obtén un borrador editable.</p>
+    <div>
+      <h1>HABITUSS · Plano a PowerPoint</h1>
+      <p>Sube la foto de un plano y obtén un borrador editable.</p>
+    </div>
+    <!-- Este botón solo aparece cuando el navegador permite instalar la app -->
+    <button id="btnInstalar">⬇ Instalar app</button>
   </header>
 
   <main>
@@ -107,6 +128,11 @@
     <!-- ========================== PASO 2: INTERPRETAR ========================= -->
     <section class="tarjeta">
       <h2><span class="paso">2</span> Interpretar con IA</h2>
+      <!-- Solo se muestra si el servidor pide la clave de acceso de la empresa -->
+      <div id="bloqueClave">
+        <label for="clave">🔒 Clave de acceso de HABITUSS</label>
+        <input id="clave" type="password" placeholder="Escríbela una sola vez; quedará guardada en este equipo" autocomplete="off" />
+      </div>
       <button id="btnInterpretar" disabled>Interpretar plano</button>
       <div id="estado"></div>
     </section>
@@ -121,9 +147,20 @@
         <ul id="dudas"></ul>
       </div>
 
-      <button class="secundario" id="btnCopiar">Copiar JSON</button>
-      <pre id="json"></pre>
-      <!-- En la Fase 2 aquí aparecerá el botón "Descargar PowerPoint" -->
+      <!-- Los datos técnicos quedan escondidos para no abrumar a quien no los necesita -->
+      <details style="margin-top:12px">
+        <summary style="cursor:pointer;color:var(--azul);font-weight:600">Ver datos técnicos (JSON)</summary>
+        <button class="secundario" id="btnCopiar" style="margin-top:10px">Copiar JSON</button>
+        <pre id="json"></pre>
+      </details>
+    </section>
+
+    <!-- ========================= PASO 3: DESCARGAR PPTX ========================= -->
+    <section class="tarjeta" id="pasoDescarga">
+      <h2><span class="paso">3</span> Descargar el PowerPoint</h2>
+      <p style="margin:0">Se crea en tu equipo: portada, plano redibujado, foto original, dudas y resumen de espacios.</p>
+      <button id="btnDescargar">Descargar PowerPoint (.pptx)</button>
+      <div id="estadoDescarga"></div>
     </section>
   </main>
 
@@ -175,7 +212,10 @@
       try {
         const c = await comprimirImagen(archivo);
         // "data:image/jpeg;base64,AAAA..." → nos quedamos con la parte después de la coma
-        imagenComprimida = { base64: c.dataUrl.split(",")[1], tipoMime: "image/jpeg", dataUrl: c.dataUrl };
+        imagenComprimida = {
+          base64: c.dataUrl.split(",")[1], tipoMime: "image/jpeg", dataUrl: c.dataUrl,
+          ancho: c.ancho, alto: c.alto,   // se usan para poner la foto sin deformarla en el PowerPoint
+        };
         $("vista").src = c.dataUrl;
         $("vista").style.display = "block";
         const kbOriginal = Math.round(archivo.size / 1024);
@@ -195,15 +235,25 @@
     }
 
     // ---------- Paso 2: enviar a la función serverless ----------
+    // ---------- Clave de acceso (se guarda en este equipo) ----------
+    // try/catch porque algunos navegadores bloquean el almacenamiento en modo privado
+    const leerClave = () => { try { return localStorage.getItem("habituss_clave") || ""; } catch { return ""; } };
+    const guardarClave = (v) => { try { localStorage.setItem("habituss_clave", v); } catch {} };
+    $("clave").value = leerClave();
+
     $("btnInterpretar").addEventListener("click", async () => {
       $("btnInterpretar").disabled = true;
       $("resultado").style.display = "none";
+      $("pasoDescarga").style.display = "none";
       mostrarEstado("⏳ Interpretando el plano… puede tardar hasta 1 minuto.");
+
+      // Si el usuario escribió una clave, la guardamos para la próxima vez
+      if ($("clave").value.trim()) guardarClave($("clave").value.trim());
 
       try {
         const respuesta = await fetch("/api/interpretar", {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: { "Content-Type": "application/json", "x-clave-acceso": leerClave() },
           body: JSON.stringify({
             imagen: imagenComprimida.base64,
             tipoMime: imagenComprimida.tipoMime,
@@ -218,11 +268,18 @@
         try { datos = await respuesta.json(); }
         catch { throw new Error("El servidor no respondió como se esperaba (código " + respuesta.status + ")."); }
 
+        // El servidor pidió clave (o la clave guardada ya no sirve): mostramos el campo
+        if (datos.codigo === "clave") {
+          $("bloqueClave").style.display = "block";
+          $("clave").focus();
+          throw new Error("Escribe la clave de acceso de HABITUSS y vuelve a pulsar «Interpretar plano».");
+        }
         if (!datos.ok) throw new Error(datos.error || "Error desconocido.");
 
         planoActual = datos.plano;
         mostrarResultado(planoActual);
-        mostrarEstado("✔ Listo. Revisa el resultado abajo.", "ok");
+        $("pasoDescarga").style.display = "block";
+        mostrarEstado("✔ Listo. Revisa el resultado y descarga el PowerPoint abajo.", "ok");
       } catch (err) {
         mostrarEstado("✖ " + err.message, "error");
       } finally {
@@ -254,6 +311,60 @@
       $("btnCopiar").textContent = "¡Copiado!";
       setTimeout(() => ($("btnCopiar").textContent = "Copiar JSON"), 1500);
     });
+
+    // ---------- Paso 3: generar y descargar el PowerPoint ----------
+    $("btnDescargar").addEventListener("click", async () => {
+      const estado = $("estadoDescarga");
+      if (typeof PptxGenJS === "undefined" || typeof generarPPTX === "undefined") {
+        estado.textContent = "✖ No se cargó la herramienta de PowerPoint. Revisa tu conexión a internet y recarga la página.";
+        estado.className = "error";
+        return;
+      }
+      try {
+        $("btnDescargar").disabled = true;
+        estado.textContent = "⏳ Creando el PowerPoint…";
+        estado.className = "";
+
+        const datos = { prestador: $("prestador").value.trim(), direccion: $("direccion").value.trim() };
+        const pptx = generarPPTX(PptxGenJS, planoActual, datos, imagenComprimida);
+
+        // Nombre del archivo: Plano_NombreDelPrestador_2026-10-02.pptx (sin tildes ni símbolos raros)
+        const limpio = (datos.prestador || "plano")
+          .normalize("NFD").replace(/[̀-ͯ]/g, "")
+          .replace(/[^a-zA-Z0-9]+/g, "_").replace(/^_+|_+$/g, "").slice(0, 40) || "plano";
+        const nombre = `Plano_${limpio}_${new Date().toISOString().slice(0, 10)}`;
+
+        await pptx.writeFile({ fileName: nombre + ".pptx" });
+        estado.textContent = "✔ Listo: revisa tu carpeta de Descargas.";
+        estado.className = "ok";
+      } catch (err) {
+        estado.textContent = "✖ No pude crear el PowerPoint: " + err.message;
+        estado.className = "error";
+      } finally {
+        $("btnDescargar").disabled = false;
+      }
+    });
+
+    // ---------- App instalable (PWA) ----------
+    // 1) Registrar el "service worker" (requisito del navegador para poder instalar)
+    if ("serviceWorker" in navigator) {
+      navigator.serviceWorker.register("/sw.js").catch(() => { /* si falla, la página sigue funcionando normal */ });
+    }
+    // 2) El navegador avisa cuando se puede instalar: mostramos nuestro botón
+    let ofertaInstalar = null;
+    window.addEventListener("beforeinstallprompt", (e) => {
+      e.preventDefault();
+      ofertaInstalar = e;
+      $("btnInstalar").style.display = "inline-block";
+    });
+    $("btnInstalar").addEventListener("click", async () => {
+      if (!ofertaInstalar) return;
+      ofertaInstalar.prompt();
+      await ofertaInstalar.userChoice;
+      ofertaInstalar = null;
+      $("btnInstalar").style.display = "none";
+    });
+    window.addEventListener("appinstalled", () => ($("btnInstalar").style.display = "none"));
   </script>
 </body>
 </html>
