@@ -3,13 +3,13 @@
 // =====================================================================
 // Qué hace, en simple:
 //   1. Recibe desde la página una imagen (ya comprimida) y datos opcionales.
-//   2. Se la envía a Claude pidiéndole SOLO un JSON con el plano.
+//   2. Se la envía a la IA (Gemini o Claude) pidiéndole SOLO un JSON con el plano.
 //   3. Valida que el JSON tenga la forma correcta.
 //      Si no es válido, reintenta UNA vez. Si falla otra vez, devuelve un error claro.
 //   4. Devuelve el JSON a la página.
 //
-// La API key vive SOLO aquí, en la variable de entorno ANTHROPIC_API_KEY.
-// El navegador del usuario nunca la ve.
+// La API key vive SOLO aquí, en una variable de entorno (GEMINI_API_KEY o
+// ANTHROPIC_API_KEY). El navegador del usuario nunca la ve.
 // =====================================================================
 
 const MODELO = "claude-sonnet-5-5";
@@ -120,9 +120,53 @@ function extraerJSON(texto) {
 }
 
 // ---------------------------------------------------------------------
-// 3) Una llamada a Claude + validación. Lanza error si algo sale mal.
+// 3) ¿Con qué IA hablamos?  Se decide según las variables de Vercel:
+//    - Si existe GEMINI_API_KEY  → Google Gemini (tiene plan gratuito)
+//    - Si no, y existe ANTHROPIC_API_KEY → Claude (de pago por uso)
 // ---------------------------------------------------------------------
-async function interpretarUnaVez({ imagen, tipoMime, prompt }) {
+const proveedorActivo = () =>
+  process.env.GEMINI_API_KEY ? "gemini" : process.env.ANTHROPIC_API_KEY ? "claude" : null;
+
+// Modelo de Gemini. Si Google lo renombra, se cambia con la variable GEMINI_MODEL en Vercel.
+const modeloGemini = () => process.env.GEMINI_MODEL || "gemini-3.8-flash";
+
+// Errores de conexión/credenciales: reintentar no ayuda
+function errorDeApi(mensaje) {
+  const e = new Error(mensaje);
+  e.esDeApi = true;
+  return e;
+}
+
+// ---- Opción A: Google Gemini. Devuelve el TEXTO de la respuesta ----
+async function preguntarGemini({ imagen, tipoMime, prompt }) {
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${modeloGemini()}:generateContent`;
+  const respuesta = await fetch(url, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      "x-goog-api-key": process.env.GEMINI_API_KEY, // ← la llave secreta
+    },
+    body: JSON.stringify({
+      contents: [
+        { parts: [{ inline_data: { mime_type: tipoMime, data: imagen } }, { text: prompt }] },
+      ],
+      // Pedimos que responda directamente en JSON
+      generationConfig: { response_mime_type: "application/json", temperature: 0.2, maxOutputTokens: 8192 },
+    }),
+  });
+  if (!respuesta.ok) {
+    const detalle = await respuesta.text();
+    throw errorDeApi(`La API de Gemini respondió ${respuesta.status}: ${detalle.slice(0, 300)}`);
+  }
+  const datos = await respuesta.json();
+  const partes = datos.candidates?.[0]?.content?.parts || [];
+  const texto = partes.map((p) => p.text || "").join("");
+  if (!texto) throw new Error("Gemini no devolvió texto (puede haber bloqueado la imagen).");
+  return texto;
+}
+
+// ---- Opción B: Claude (Anthropic). Devuelve el TEXTO de la respuesta ----
+async function preguntarClaude({ imagen, tipoMime, prompt }) {
   const respuesta = await fetch(URL_API, {
     method: "POST",
     headers: {
@@ -147,13 +191,19 @@ async function interpretarUnaVez({ imagen, tipoMime, prompt }) {
 
   if (!respuesta.ok) {
     const detalle = await respuesta.text();
-    const e = new Error(`La API de Anthropic respondió ${respuesta.status}: ${detalle.slice(0, 300)}`);
-    e.esDeApi = true; // error de conexión/credenciales: reintentar no ayuda
-    throw e;
+    throw errorDeApi(`La API de Anthropic respondió ${respuesta.status}: ${detalle.slice(0, 300)}`);
   }
 
   const datos = await respuesta.json();
-  const texto = (datos.content || []).filter((b) => b.type === "text").map((b) => b.text).join("");
+  return (datos.content || []).filter((b) => b.type === "text").map((b) => b.text).join("");
+}
+
+// ---------------------------------------------------------------------
+// 4) Una consulta a la IA elegida + validación. Lanza error si algo sale mal.
+// ---------------------------------------------------------------------
+async function interpretarUnaVez({ imagen, tipoMime, prompt }) {
+  const preguntar = proveedorActivo() === "gemini" ? preguntarGemini : preguntarClaude;
+  const texto = await preguntar({ imagen, tipoMime, prompt });
   const plano = extraerJSON(texto);
   const problemas = validarPlano(plano);
   if (problemas.length) {
@@ -163,16 +213,16 @@ async function interpretarUnaVez({ imagen, tipoMime, prompt }) {
 }
 
 // ---------------------------------------------------------------------
-// 4) El "handler": lo que Vercel ejecuta cuando la página llama a /api/interpretar
+// 5) El "handler": lo que Vercel ejecuta cuando la página llama a /api/interpretar
 // ---------------------------------------------------------------------
 export default async function handler(req, res) {
   if (req.method !== "POST") {
     return res.status(405).json({ ok: false, error: "Usa el método POST." });
   }
-  if (!process.env.ANTHROPIC_API_KEY) {
+  if (!proveedorActivo()) {
     return res.status(500).json({
       ok: false,
-      error: "Falta configurar ANTHROPIC_API_KEY en el servidor. Revisa el LEEME.md.",
+      error: "Falta configurar GEMINI_API_KEY (o ANTHROPIC_API_KEY) en el servidor. Revisa el LEEME.md.",
     });
   }
 

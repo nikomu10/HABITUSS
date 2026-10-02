@@ -1,6 +1,6 @@
 # HABITUSS · Plano a PowerPoint
 
-Sube la foto de un plano → la IA lo interpreta → descargas un PowerPoint (.pptx) con el plano
+Sube la foto de un plano → la IA (Gemini o Claude) lo interpreta → descargas un PowerPoint (.pptx) con el plano
 redibujado en figuras editables.
 
 **Estado: Fases 1 y 2 completas** (subir + interpretar + descargar PowerPoint), con clave de acceso
@@ -17,7 +17,7 @@ y opción de instalar como app.
 |---|---|
 | `index.html` | La página que ve el usuario: sube la foto, la comprime, muestra el resultado y descarga el PowerPoint. |
 | `generar-pptx.js` | Arma el PowerPoint (portada, plano a escala, foto, dudas, tabla). Corre en el navegador del usuario. |
-| `api/interpretar.js` | La "cocina" en Vercel: guarda tu llave secreta, comprueba la clave de acceso, habla con Claude y valida la respuesta. |
+| `api/interpretar.js` | La "cocina" en Vercel: guarda tu llave secreta, comprueba la clave de acceso, habla con la IA (Gemini o Claude) y valida la respuesta. |
 | `manifest.webmanifest`, `sw.js`, `icons/` | Permiten **instalar** la página como app con ícono propio. |
 | `vercel.json`, `package.json`, `.gitignore` | Configuración mínima. |
 
@@ -29,8 +29,23 @@ La llave de Anthropic **solo** vive en el servidor (Vercel). Nunca está en `ind
 
 1. **Node.js** 18 o superior: https://nodejs.org (botón "LTS"). Comprueba con `node --version`.
 2. **Cuenta en Vercel** (gratis): https://vercel.com/signup
-3. **API key de Anthropic**: https://console.anthropic.com → *API Keys* → *Create Key*.
-   Debe empezar por `sk-ant-...` y necesitas saldo cargado. **No la compartas ni la subas a GitHub.**
+3. **La llave de la IA**. Elige UNA de las dos (la app usa Gemini si encuentra su llave, y si no, Claude):
+
+   **Opción 1 · Gemini de Google (tiene plan GRATUITO):**
+   - Entra a https://aistudio.google.com/apikey con tu cuenta de Google (puede ser la del correo de HABITUSS).
+   - Pulsa **Create API key** y copia la llave.
+   - ⚠ **No confundir:** tener "Gemini" en tu correo o en la app (suscripción) **no** es lo mismo que la API.
+     La llave se saca en *Google AI Studio*, como arriba. Si tu correo de empresa es de Google Workspace y
+     no te deja entrar, puede que el administrador del dominio deba habilitarlo; o usa un Gmail personal.
+   - ⚠ **Privacidad:** en el plan gratuito, Google indica que el contenido enviado **puede usarse para mejorar
+     sus productos**. Los planos pueden revelar el nombre y la dirección del prestador. No subas planos de
+     clientes que exijan confidencialidad, o usa un plan de pago de Gemini (que no lo hace).
+   - Límites: el plan gratuito tiene un tope de consultas por minuto/día. Para uso ligero alcanza.
+
+   **Opción 2 · Claude de Anthropic (de pago por uso, centavos por plano):**
+   - https://console.anthropic.com → *Billing* (cargar saldo) → *API Keys* → *Create Key* (empieza por `sk-ant-...`).
+
+   **No compartas la llave ni la subas a GitHub.**
 4. **Vercel CLI** (simula Vercel en tu computador): en la terminal, `npm install -g vercel`
 
 ---
@@ -40,10 +55,13 @@ La llave de Anthropic **solo** vive en el servidor (Vercel). Nunca está en `ind
 1. Abre una terminal dentro de la carpeta del proyecto.
 2. Crea un archivo llamado **`.env.local`** (con el punto al inicio) con estas líneas:
    ```
-   ANTHROPIC_API_KEY=sk-ant-PEGA-AQUI-TU-LLAVE
+   GEMINI_API_KEY=PEGA-AQUI-TU-LLAVE-DE-GEMINI
    CLAVE_ACCESO=invéntate-una-clave-para-tu-equipo
    ```
-   - `ANTHROPIC_API_KEY`: tu llave de Anthropic.
+   - `GEMINI_API_KEY`: tu llave de Google AI Studio. (Si usas Claude en vez de Gemini, escribe
+     `ANTHROPIC_API_KEY=sk-ant-...` y no pongas la de Gemini.)
+   - `GEMINI_MODEL` (opcional): si Google cambia o retira el modelo y la app da error de "model not found",
+     agrega una línea como `GEMINI_MODEL=gemini-2.5-flash`. Por defecto usa `gemini-3.8-flash`.
    - `CLAVE_ACCESO`: la contraseña que escribirán tus compañeros (una sola vez por equipo).
      Si la dejas vacía o no la pones, **cualquiera con el enlace podrá gastar tu saldo**.
    Este archivo está en `.gitignore`, así que no se sube a GitHub.
@@ -67,8 +85,11 @@ La llave de Anthropic **solo** vive en el servidor (Vercel). Nunca está en `ind
 1. En la terminal, dentro del proyecto: `vercel` (versión de prueba) y luego `vercel --prod` (versión pública).
 2. **Pon las variables en Vercel** (el `.env.local` NO se sube):
    - https://vercel.com → tu proyecto → **Settings** → **Environment Variables**.
-   - Crea **dos**: `ANTHROPIC_API_KEY` y `CLAVE_ACCESO`. Marca Production, Preview y Development → **Save**.
+   - Crea **dos**: `GEMINI_API_KEY` (o `ANTHROPIC_API_KEY` si usas Claude) y `CLAVE_ACCESO`.
+     Marca Production, Preview y Development → **Save**.
    - Vuelve a ejecutar `vercel --prod` para que tome el cambio.
+   - **Sin terminal:** también puedes importar el repositorio desde https://vercel.com → *Add New… → Project*,
+     elegir HABITUSS, dejar *Framework Preset* en **Other**, agregar las variables en *Environment Variables* y pulsar **Deploy**.
 3. Vercel te da una dirección tipo `https://habituss-planos.vercel.app`. **Esa es la que compartes con tu equipo**,
    junto con la clave de acceso.
 4. Recomendado: en la consola de Anthropic fija un **límite mensual de gasto** (*Settings → Limits*).
@@ -93,10 +114,12 @@ La app instalada **necesita internet**, porque la interpretación la hace Claude
 
 | Síntoma | Causa probable | Solución |
 |---|---|---|
-| "Falta configurar ANTHROPIC_API_KEY" | No existe `.env.local` o la variable en Vercel | Revisa el nombre exacto y reinicia `vercel dev` / vuelve a publicar |
+| "Falta configurar GEMINI_API_KEY (o ANTHROPIC_API_KEY)" | No existe `.env.local` o la variable en Vercel | Revisa el nombre exacto y reinicia `vercel dev` / en Vercel haz *Redeploy* |
+| Error 404 "model not found" de Gemini | Google renombró o retiró el modelo | Agrega la variable `GEMINI_MODEL=gemini-2.5-flash` y vuelve a publicar |
+| Error 429 de Gemini | Superaste el límite del plan gratuito | Espera unos minutos o al día siguiente |
 | Pide la clave de acceso siempre | La clave no coincide con `CLAVE_ACCESO` | Revisa mayúsculas/espacios; si la cambiaste, cada usuario debe escribir la nueva |
-| Error 401 de la API | Llave de Anthropic incorrecta | Genera otra en la consola de Anthropic |
-| Error 429 / 402 | Sin saldo o demasiadas consultas | Revisa tu crédito en la consola |
+| Error 400/401/403 de la API | Llave incorrecta o sin permiso | Genera otra llave (AI Studio o consola de Anthropic) |
+| Error 402 de Anthropic | Sin saldo | Carga crédito o cambia a Gemini |
 | "No pude interpretar el plano" | Foto borrosa u oscura | Foto más nítida, de frente y con buena luz |
 | "No se cargó la herramienta de PowerPoint" | Sin internet o bloqueo de `cdn.jsdelivr.net` | Revisa la conexión; en redes con filtros pide que permitan ese sitio |
 | No aparece «Instalar app» | Ya está instalada, o el navegador no lo permite (Firefox, Safari) | Usa Chrome o Edge; en iPad usa *Añadir a pantalla de inicio* |
