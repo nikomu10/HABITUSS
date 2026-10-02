@@ -1,0 +1,8 @@
+{
+  "name": "habituss-planos",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Convierte fotos de planos en PowerPoint editable (HABITUSS)",
+  "engines": { "node": ">=18" }
+}

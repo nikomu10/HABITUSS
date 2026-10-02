@@ -1,0 +1,5 @@
+# Nunca subir llaves secretas ni carpetas generadas
+.env
+.env.*
+node_modules/
+.vercel/

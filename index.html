@@ -1,0 +1,259 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>HABITUSS · Plano a PowerPoint</title>
+
+  <!-- ===================== ESTILOS (cómo se ve la página) ===================== -->
+  <style>
+    :root {
+      --azul: #1f4e79;
+      --azul-claro: #e8f0f8;
+      --gris: #5b6770;
+      --borde: #d5dde5;
+      --error: #b3261e;
+      --ok: #1b7a43;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+      background: #f5f7fa; color: #1c2630; line-height: 1.5;
+    }
+    header { background: var(--azul); color: #fff; padding: 18px 20px; }
+    header h1 { margin: 0; font-size: 1.3rem; }
+    header p { margin: 4px 0 0; opacity: .85; font-size: .9rem; }
+    main { max-width: 900px; margin: 0 auto; padding: 20px; }
+    .tarjeta {
+      background: #fff; border: 1px solid var(--borde); border-radius: 10px;
+      padding: 18px; margin-bottom: 18px;
+    }
+    .tarjeta h2 { margin: 0 0 12px; font-size: 1.05rem; color: var(--azul); }
+    .paso { background: var(--azul); color: #fff; border-radius: 50%; display: inline-block;
+            width: 24px; height: 24px; text-align: center; font-size: .85rem; line-height: 24px; margin-right: 6px; }
+
+    /* Zona para soltar/elegir la imagen */
+    #zona {
+      border: 2px dashed var(--azul); border-radius: 10px; padding: 26px; text-align: center;
+      background: var(--azul-claro); cursor: pointer; color: var(--azul);
+    }
+    #zona.arrastrando { background: #cfe0f1; }
+    #vista { max-width: 100%; max-height: 360px; margin-top: 14px; border-radius: 8px;
+             border: 1px solid var(--borde); display: none; }
+    #infoImagen { font-size: .85rem; color: var(--gris); margin-top: 6px; }
+
+    label { display: block; font-weight: 600; font-size: .9rem; margin: 12px 0 4px; }
+    input[type=text] {
+      width: 100%; padding: 10px; border: 1px solid var(--borde); border-radius: 8px; font-size: 1rem;
+    }
+    small { color: var(--gris); }
+
+    button {
+      background: var(--azul); color: #fff; border: 0; border-radius: 8px;
+      padding: 12px 22px; font-size: 1rem; cursor: pointer; margin-top: 16px;
+    }
+    button:disabled { background: #9db3c8; cursor: not-allowed; }
+    button.secundario { background: #fff; color: var(--azul); border: 1px solid var(--azul);
+                        padding: 6px 12px; font-size: .85rem; margin-top: 0; }
+
+    #estado { margin-top: 12px; font-weight: 600; }
+    #estado.error { color: var(--error); }
+    #estado.ok { color: var(--ok); }
+
+    #resultado { display: none; }
+    pre {
+      background: #0f1720; color: #d6e4f0; padding: 14px; border-radius: 8px;
+      overflow: auto; max-height: 420px; font-size: .8rem; margin: 10px 0 0;
+    }
+    .resumen { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 10px; }
+    .dato { background: var(--azul-claro); border-radius: 8px; padding: 8px 14px; font-size: .9rem; }
+    .dato b { font-size: 1.15rem; display: block; color: var(--azul); }
+    #dudas li { margin-bottom: 4px; }
+  </style>
+</head>
+
+<body>
+  <header>
+    <h1>HABITUSS · Plano a PowerPoint</h1>
+    <p>Sube la foto de un plano y obtén un borrador editable.</p>
+  </header>
+
+  <main>
+    <!-- ============================ PASO 1: SUBIR ============================ -->
+    <section class="tarjeta">
+      <h2><span class="paso">1</span> Subir el plano</h2>
+
+      <div id="zona">
+        <strong>Toca aquí o arrastra una imagen</strong><br />
+        <small>Formatos: JPG o PNG</small>
+      </div>
+      <!-- Este input está oculto; la "zona" de arriba lo abre al hacer clic -->
+      <input id="archivo" type="file" accept="image/jpeg,image/png" hidden />
+
+      <img id="vista" alt="Vista previa del plano" />
+      <div id="infoImagen"></div>
+
+      <label for="prestador">Nombre del prestador (opcional)</label>
+      <input id="prestador" type="text" placeholder="Ej: IPS Salud Vital S.A.S." />
+
+      <label for="direccion">Dirección (opcional)</label>
+      <input id="direccion" type="text" placeholder="Ej: Cra 10 # 20-30, Bogotá" />
+
+      <label for="referencia">Medida de referencia (opcional)</label>
+      <input id="referencia" type="text" placeholder="Ej: el muro de la entrada mide 4 m" />
+      <small>Ayuda mucho a la IA a calcular la escala real.</small>
+    </section>
+
+    <!-- ========================== PASO 2: INTERPRETAR ========================= -->
+    <section class="tarjeta">
+      <h2><span class="paso">2</span> Interpretar con IA</h2>
+      <button id="btnInterpretar" disabled>Interpretar plano</button>
+      <div id="estado"></div>
+    </section>
+
+    <!-- ===================== RESULTADO (JSON en pantalla) ===================== -->
+    <section class="tarjeta" id="resultado">
+      <h2>Resultado de la IA</h2>
+      <div class="resumen" id="resumen"></div>
+
+      <div id="bloqueDudas">
+        <strong>⚠ Dudas de la IA (revísalas):</strong>
+        <ul id="dudas"></ul>
+      </div>
+
+      <button class="secundario" id="btnCopiar">Copiar JSON</button>
+      <pre id="json"></pre>
+      <!-- En la Fase 2 aquí aparecerá el botón "Descargar PowerPoint" -->
+    </section>
+  </main>
+
+  <!-- ===================== LÓGICA (lo que hace la página) ===================== -->
+  <script>
+    // Guardamos aquí el plano interpretado. En la Fase 2 lo usará PptxGenJS.
+    let planoActual = null;
+    // Guardamos la imagen comprimida (base64) y su tipo.
+    let imagenComprimida = null;
+
+    // Atajo para encontrar elementos por su id
+    const $ = (id) => document.getElementById(id);
+
+    // ---------- Elegir o arrastrar la imagen ----------
+    $("zona").addEventListener("click", () => $("archivo").click());
+    $("zona").addEventListener("dragover", (e) => { e.preventDefault(); $("zona").classList.add("arrastrando"); });
+    $("zona").addEventListener("dragleave", () => $("zona").classList.remove("arrastrando"));
+    $("zona").addEventListener("drop", (e) => {
+      e.preventDefault();
+      $("zona").classList.remove("arrastrando");
+      if (e.dataTransfer.files[0]) procesarArchivo(e.dataTransfer.files[0]);
+    });
+    $("archivo").addEventListener("change", (e) => {
+      if (e.target.files[0]) procesarArchivo(e.target.files[0]);
+    });
+
+    // ---------- Comprimir la imagen antes de enviarla ----------
+    // Reducimos el tamaño (máx. 1600 px) y la calidad para gastar menos y evitar
+    // el límite de tamaño de Vercel (4,5 MB).
+    async function comprimirImagen(archivo, ladoMax = 1600, calidad = 0.8) {
+      const bitmap = await createImageBitmap(archivo);
+      const factor = Math.min(1, ladoMax / Math.max(bitmap.width, bitmap.height));
+      const canvas = document.createElement("canvas");
+      canvas.width = Math.round(bitmap.width * factor);
+      canvas.height = Math.round(bitmap.height * factor);
+      const ctx = canvas.getContext("2d");
+      ctx.fillStyle = "#fff";                       // fondo blanco (por si el PNG es transparente)
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+      const dataUrl = canvas.toDataURL("image/jpeg", calidad);
+      return { dataUrl, ancho: canvas.width, alto: canvas.height };
+    }
+
+    async function procesarArchivo(archivo) {
+      if (!["image/jpeg", "image/png"].includes(archivo.type)) {
+        mostrarEstado("Solo se aceptan imágenes JPG o PNG.", "error");
+        return;
+      }
+      try {
+        const c = await comprimirImagen(archivo);
+        // "data:image/jpeg;base64,AAAA..." → nos quedamos con la parte después de la coma
+        imagenComprimida = { base64: c.dataUrl.split(",")[1], tipoMime: "image/jpeg", dataUrl: c.dataUrl };
+        $("vista").src = c.dataUrl;
+        $("vista").style.display = "block";
+        const kbOriginal = Math.round(archivo.size / 1024);
+        const kbNuevo = Math.round((imagenComprimida.base64.length * 3) / 4 / 1024);
+        $("infoImagen").textContent =
+          `Original: ${kbOriginal} KB → Comprimida: ${kbNuevo} KB (${c.ancho}×${c.alto} px)`;
+        $("btnInterpretar").disabled = false;
+        mostrarEstado("");
+      } catch (err) {
+        mostrarEstado("No pude leer esa imagen. Prueba con otra.", "error");
+      }
+    }
+
+    function mostrarEstado(texto, tipo = "") {
+      $("estado").textContent = texto;
+      $("estado").className = tipo;
+    }
+
+    // ---------- Paso 2: enviar a la función serverless ----------
+    $("btnInterpretar").addEventListener("click", async () => {
+      $("btnInterpretar").disabled = true;
+      $("resultado").style.display = "none";
+      mostrarEstado("⏳ Interpretando el plano… puede tardar hasta 1 minuto.");
+
+      try {
+        const respuesta = await fetch("/api/interpretar", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            imagen: imagenComprimida.base64,
+            tipoMime: imagenComprimida.tipoMime,
+            prestador: $("prestador").value.trim(),
+            direccion: $("direccion").value.trim(),
+            referencia: $("referencia").value.trim(),
+          }),
+        });
+
+        // Si el servidor no devolvió JSON (por ejemplo, un error de Vercel), lo manejamos
+        let datos;
+        try { datos = await respuesta.json(); }
+        catch { throw new Error("El servidor no respondió como se esperaba (código " + respuesta.status + ")."); }
+
+        if (!datos.ok) throw new Error(datos.error || "Error desconocido.");
+
+        planoActual = datos.plano;
+        mostrarResultado(planoActual);
+        mostrarEstado("✔ Listo. Revisa el resultado abajo.", "ok");
+      } catch (err) {
+        mostrarEstado("✖ " + err.message, "error");
+      } finally {
+        $("btnInterpretar").disabled = false;
+      }
+    });
+
+    // ---------- Mostrar el JSON y un resumen ----------
+    function mostrarResultado(p) {
+      const cuadros = [
+        ["Espacios", p.espacios.length], ["Muros", p.muros.length],
+        ["Puertas", p.puertas.length], ["Ventanas", p.ventanas.length],
+        ["Textos", p.textos.length], ["Dudas", p.dudas.length],
+      ];
+      $("resumen").innerHTML = cuadros.map(([n, v]) => `<div class="dato"><b>${v}</b>${n}</div>`).join("");
+
+      // textContent (no innerHTML) para que el texto de la IA nunca se interprete como HTML
+      $("dudas").innerHTML = "";
+      p.dudas.forEach((d) => { const li = document.createElement("li"); li.textContent = d; $("dudas").appendChild(li); });
+      $("bloqueDudas").style.display = p.dudas.length ? "block" : "none";
+
+      $("json").textContent = JSON.stringify(p, null, 2);
+      $("resultado").style.display = "block";
+      $("resultado").scrollIntoView({ behavior: "smooth" });
+    }
+
+    $("btnCopiar").addEventListener("click", async () => {
+      await navigator.clipboard.writeText($("json").textContent);
+      $("btnCopiar").textContent = "¡Copiado!";
+      setTimeout(() => ($("btnCopiar").textContent = "Copiar JSON"), 1500);
+    });
+  </script>
+</body>
+</html>
